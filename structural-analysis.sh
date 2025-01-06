@@ -305,7 +305,25 @@ do
 					if [[ $test == ncc || $test == a ]]
 					then
 						rm ${fslanatdir}design/${region}.ncc.bvars
-						concat_bvars ${fslanatdir}design/${region}.ncc.bvars ${fslanatdir}sub-0*/sub-0*first-${region}_first.bvars
+						concat_bvars ${fslanatdir}design/${region}.ncc.bvars \
+							${fslanatdir}sub-002/sub-002_first-${region}_first.bvars \
+							${fslanatdir}sub-003/sub-003_first-${region}_first.bvars \
+							${fslanatdir}sub-007/sub-007_first-${region}_first.bvars \
+							${fslanatdir}sub-008/sub-008_first-${region}_first.bvars \
+							${fslanatdir}sub-010/sub-010_first-${region}_first.bvars \
+							${fslanatdir}sub-011/sub-011_first-${region}_first.bvars \
+							${fslanatdir}sub-012/sub-012_first-${region}_first.bvars \
+							${fslanatdir}sub-014/sub-014_first-${region}_first.bvars \
+							${fslanatdir}sub-015/sub-015_first-${region}_first.bvars \
+							${fslanatdir}sub-016/sub-016_first-${region}_first.bvars \
+							${fslanatdir}sub-018/sub-018_first-${region}_first.bvars \
+							${fslanatdir}sub-021/sub-021_first-${region}_first.bvars \
+							${fslanatdir}sub-022/sub-022_first-${region}_first.bvars \
+							${fslanatdir}sub-024/sub-024_first-${region}_first.bvars \
+							${fslanatdir}sub-027/sub-027_first-${region}_first.bvars \
+							${fslanatdir}sub-030/sub-030_first-${region}_first.bvars \
+							${fslanatdir}sub-031/sub-031_first-${region}_first.bvars \
+							${fslanatdir}sub-033/sub-033_first-${region}_first.bvars
 						first_utils --vertexAnalysis \
 							--usebvars \
 							-i ${fslanatdir}design/${region}.ncc.bvars \
@@ -346,6 +364,7 @@ do
 						echo Invalid selection.
 					fi
 				done
+				echo PLEASE REFER TO 'surfice-meshcreate.sh' BEFORE RUNNING STEP 3
 
 			elif [[ $fslselect == 3 ]]
 			# Volume estimation

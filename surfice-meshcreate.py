@@ -1,6 +1,6 @@
 import gl
 gl.resetdefaults()
-mesh_dir = f'/meshdir/'
+mesh_dir = f'~/Desktop/Display_Volumes/'
 hemis = ['lh', 'rh']
 regions = ['Accu', 'Amyg', 'Caud', 'Hipp', 'Pall', 'Puta', 'Thal']
 groups = ['all', 'hcc', 'ncc']

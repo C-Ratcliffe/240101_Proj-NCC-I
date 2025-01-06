@@ -22,7 +22,7 @@ do
 	# HCP reorganisation
 	then
 		# HCP-specific aliases
-		indir=/Volumes/CR-HD_1/Working_Directory_Imaging/
+		indir=~/HCP_data/
 		declare -i k=930
 		# All of the HCP files are copied over to the sourcedir (no jsons included)
 		for i in ${indir}*/

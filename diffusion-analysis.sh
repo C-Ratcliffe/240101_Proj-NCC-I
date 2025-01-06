@@ -7,10 +7,12 @@ do
 	echo 2. Fixel-based analysis
 	echo 3. TractSeg
 	echo 4. Statistics
-	echo 5. Images
-	echo 6. Skip diffusion analysis
+	echo 5. Lesion Network Mapping
+	echo 6. Images
+	echo 7. Connectomes
+	echo 8. Skip diffusion analysis
 	echo
-	read "diffselect?Selection (1/6): "
+	read "diffselect?Selection (1/8): "
 	tsdir=${derivdir}tractseg/
 	fbadir=${derivdir}fba/
 	groupdir=${fbadir}group/
@@ -20,6 +22,7 @@ do
 	template_wmfod=${templatedir}wmfod-template.mif
 	bundledir=${templatedir}roi/bundles/
 	statsdir=${templatedir}stats/norm/
+	lesiondir=${templatedir}lesion-mapping-dilate/
 	
 	if [[ $diffselect == 1 ]]
 	# Package install
@@ -67,7 +70,7 @@ do
 		source tractseg/bin/activate
 		pip install torch
 		pip install packaging
-		pip install TractSeg
+		pip install TractS
 
 	elif [[ $diffselect == 2 ]]
 	# Fixel-based analysis
@@ -302,31 +305,30 @@ do
 			echo 1. Tract ROIs and profiles
 			echo 2. Fixel modeling
 			echo 3. Scalar modeling
-			echo 4. Skip FBA
+			echo 4. Table extraction
+			echo 5. Skip FBA
 			echo
 			read "statselect?Selection (1/5): "
-			
-			fixel2voxel ${templatedir}fixel_mask/directions.mif absmax ${templatedir}fixel_mask/mask-fixel.mif
-			mrcalc ${templatedir}fixel_mask/mask-fixel.mif 0 -gt ${templatedir}fixel_mask/mask.mif
-			rm ${templatedir}fixel_mask/mask-fixel.mif
 
 			if [[ $statselect == 1 ]]
 			# Tract ROIs and profiles
 			then
-				rm ${bundledir}tracts.csv
+				fixel2voxel ${templatedir}fixel_mask/directions.mif absmax ${templatedir}fixel_mask/mask-fixel.mif
+				mrcalc ${templatedir}fixel_mask/mask-fixel.mif 0 -gt ${templatedir}fixel_mask/mask.mif
+				rm ${templatedir}fixel_mask/mask-fixel.mif ${bundledir}tracts.tsv
 				for subpath in ${indir}*
 				do
 					subname=${subpath##*/input/}
 					for i in ad ak fa fd fdc logfc md mk rd rk
 					do
-						echo ${subname} > ${templatedir}${i}/${subname}.csv
+						echo ${subname} > ${templatedir}${i}/${subname}.tsv
 					done
 				done
 				for tract in ${tractseg_wmdir}tractseg_output/TOM_trackings/*.tck
 				do
 					tractdir=${tract%%.tck}
 					tractname=${tractdir##*TOM_trackings/}
-					echo $tractname >> ${bundledir}tracts.csv
+					echo $tractname >> ${bundledir}tracts.tsv
 					tck2fixel $tract ${templatedir}fd/ $bundledir ${tractname}_fixel.mif
 					mrthreshold ${bundledir}${tractname}_fixel.mif -abs 1 ${bundledir}${tractname}_fixel.mif -force
 					fixel2voxel ${bundledir}${tractname}_fixel.mif none ${bundledir}${tractname}_voxel.mif
@@ -335,20 +337,35 @@ do
 						subname=${subpath##*/input/}
 						for i in fd fdc logfc
 							do
-							mrstats -output mean ${templatedir}${i}/${subname}*.mif -mask ${bundledir}${tractname}_fixel.mif >> ${templatedir}${i}/${subname}.csv
+							mrstats -output mean ${templatedir}${i}/${subname}*.mif -mask ${bundledir}${tractname}_fixel.mif >> ${templatedir}${i}/${subname}.tsv
 						done
 						for i in ad ak fa md mk rd rk
 							do
-							mrstats -output mean ${templatedir}${i}/${subname}*.mif -mask ${bundledir}${tractname}_voxel.mif >> ${templatedir}${i}/${subname}.csv
+							mrstats -output mean ${templatedir}${i}/${subname}*.mif -mask ${bundledir}${tractname}_voxel.mif >> ${templatedir}${i}/${subname}.tsv
 						done
 					done
 				done
 				for i in ad ak fa fd fdc logfc md mk rd rk
 				do
-					paste -sd "," ${templatedir}${i}/*.csv > ${statsdir}${i}_mean.csv
-					rm ${templatedir}${i}/*.csv
+					paste -sd "," ${templatedir}${i}/*.tsv > ${statsdir}${i}_mean.tsv
+					rm ${templatedir}${i}/*.tsv
 				done
-								
+				
+				if [[ -e ${bundledir}volumes.tsv ]]
+				then
+					echo Volumes exist
+				else
+					touch ${bundledir}volumes.tsv
+					for m in ${tractseg_wmdir}tractseg_output/TOM_trackings/*.tck
+					do
+						tractfile=${m##*TOM_trackings/}
+						tract=${tractfile%%.tck}
+						mrconvert ${bundledir}${tract}_voxel.mif -coord 3 0 -axes 0,1,2 ${bundledir}temp.mif
+						mrstats -output count -ignorezero ${bundledir}temp.mif >> ${bundledir}volumes.tsv
+						rm ${bundledir}temp.mif
+					done
+				fi
+					
 			elif [[ $statselect == 2 ]]
 			# Fixel modeling
 			then
@@ -367,6 +384,17 @@ do
 									mrthreshold  -abs 0.${l} ${templatedir}stats/${j}/${i}/fwe_1mpvalue_${k}.mif ${templatedir}stats/${j}/${i}/sig0${l}-${k}.mif
 									fixel2voxel ${templatedir}stats/${j}/${i}/sig0${l}-${k}.mif max ${templatedir}stats/${j}/${i}/sig0${l}-${k}_mask.mif
 									tckgen -angle 22.5 -maxlen 25 -minlen 2 -power 1.0 ${templatedir}wmfod-template.mif -seed_image ${templatedir}stats/${j}/${i}/sig0${l}-${k}_mask.mif -mask ${templatedir}template_mask.mif -select 100000 -cutoff 0.06 ${templatedir}tracks/${j}_${i}_sig0${l}-${k}.tck
+									touch ${templatedir}stats/${j}/${i}/sig0${l}-${k}.tsv
+									for m in ${tractseg_wmdir}tractseg_output/TOM_trackings/*.tck
+									do
+										tractfile=${m##*TOM_trackings/}
+										tract=${tractfile%%.tck}
+										mrconvert ${bundledir}${tract}_voxel.mif -coord 3 0 -axes 0,1,2 ${bundledir}temp.mif
+										mrstats -output count -mask ${templatedir}stats/${j}/${i}/sig0${l}-${k}_mask.mif -ignorezero ${bundledir}temp.mif >> ${templatedir}stats/${j}/${i}/sig0${l}-${k}.tsv
+										rm ${bundledir}temp.mif
+									done
+									paste -d ' ' ${bundledir}tracts.tsv ${bundledir}volumes.tsv ${templatedir}stats/${j}/${i}/sig0${l}-${k}.tsv > ${templatedir}stats/${j}/${i}/sig0${l}-${k}-vols.tsv
+									rm ${templatedir}stats/${j}/${i}/sig0${l}-${k}.tsv
 								done
 								fixel2tsf ${templatedir}stats/${j}/${i}/fwe_1mpvalue_${k}.mif ${templatedir}tracks/${j}_${i}_sig080-${k}.tck ${templatedir}stats/${j}/${i}/tracks_fwe_1mpvalue_${k}.tsf
 							done
@@ -380,6 +408,17 @@ do
 									mrthreshold  -abs 0.${l} ${templatedir}stats/${j}/${i}/fwe_1mpvalue_${k}.mif ${templatedir}stats/${j}/${i}/sig0${l}-${k}.mif
 									fixel2voxel ${templatedir}stats/${j}/${i}/sig0${l}-${k}.mif max ${templatedir}stats/${j}/${i}/sig0${l}-${k}_mask.mif
 									tckgen -angle 22.5 -maxlen 25 -minlen 2 -power 1.0 ${templatedir}wmfod-template.mif -seed_image ${templatedir}stats/${j}/${i}/sig0${l}-${k}_mask.mif -mask ${templatedir}template_mask.mif -select 100000 -cutoff 0.06 ${templatedir}tracks/${j}_${i}_sig0${l}-${k}.tck
+									touch ${templatedir}stats/${j}/${i}/sig0${l}-${k}.tsv
+									for m in ${tractseg_wmdir}tractseg_output/TOM_trackings/*.tck
+									do
+										tractfile=${m##*TOM_trackings/}
+										tract=${tractfile%%.tck}
+										mrconvert ${bundledir}${tract}_voxel.mif -coord 3 0 -axes 0,1,2 ${bundledir}temp.mif
+										mrstats -output count -mask ${templatedir}stats/${j}/${i}/sig0${l}-${k}_mask.mif -ignorezero ${bundledir}temp.mif >> ${templatedir}stats/${j}/${i}/sig0${l}-${k}.tsv
+										rm ${bundledir}temp.mif
+									done
+									paste -d ' ' ${bundledir}tracts.tsv ${bundledir}volumes.tsv ${templatedir}stats/${j}/${i}/sig0${l}-${k}.tsv > ${templatedir}stats/${j}/${i}/sig0${l}-${k}-vols.tsv
+									rm ${templatedir}stats/${j}/${i}/sig0${l}-${k}.tsv
 								done
 								fixel2tsf ${templatedir}stats/${j}/${i}/fwe_1mpvalue_${k}.mif ${templatedir}tracks/${j}_${i}_sig080-${k}.tck ${templatedir}stats/${j}/${i}/tracks_fwe_1mpvalue_${k}.tsf
 							done
@@ -399,8 +438,7 @@ do
 						mkdir -p ${templatedir}stats/${j}/${i}/
 						if [[ $j == all ]]
 						then
-							#mrclusterstats ${groupdir}files_${i}.${j}.txt ${groupdir}design.${j}.txt ${groupdir}contrast.${j}.txt ${templatedir}fixel_mask/mask.mif ${templatedir}stats/${j}/${i}/ -ftest ${groupdir}ftest.${j}.txt
-							mrclusterstats ${groupdir}files_${i}.${j}.txt ${groupdir}design.${j}.txt ${groupdir}contrast.${j}.txt ${templatedir}fixel_mask/mask.mif ${templatedir}stats/${j}/${i}/ -ftest ${groupdir}ftest.${j}.txt -nthreads 4
+							mrclusterstats ${groupdir}files_${i}.${j}.txt ${groupdir}design.${j}.txt ${groupdir}contrast.${j}.txt ${templatedir}fixel_mask/mask.mif ${templatedir}stats/${j}/${i}/ -ftest ${groupdir}ftest.${j}.txt
 							for k in F1 t1 t2 t3 t4 t5 t6
 							do
 								voxel2fixel ${templatedir}stats/${j}/${i}/fwe_1mpvalue_${k}.mif ${templatedir}fd/ ${templatedir}stats/${j}/${i} fwe_1mpvalue_${k}-fixel.mif
@@ -408,13 +446,23 @@ do
 								do
 									mrthreshold -abs 0.${l} ${templatedir}stats/${j}/${i}/fwe_1mpvalue_${k}.mif ${templatedir}stats/${j}/${i}/sig0${l}-${k}.mif
 									tckgen -angle 22.5 -maxlen 25 -minlen 2 -power 1.0 ${templatedir}wmfod-template.mif -seed_image ${templatedir}stats/${j}/${i}/sig0${l}-${k}.mif -mask ${templatedir}template_mask.mif -select 100000 -cutoff 0.06 ${templatedir}tracks/${j}_${i}_sig0${l}-${k}.tck
+									touch ${templatedir}stats/${j}/${i}/sig0${l}-${k}.tsv
+									for m in ${tractseg_wmdir}tractseg_output/TOM_trackings/*.tck
+									do
+										tractfile=${m##*TOM_trackings/}
+										tract=${tractfile%%.tck}
+										mrconvert ${bundledir}${tract}_voxel.mif -coord 3 0 -axes 0,1,2 ${bundledir}temp.mif
+										mrstats -output count -mask ${templatedir}stats/${j}/${i}/sig0${l}-${k}.mif -ignorezero ${bundledir}temp.mif >> ${templatedir}stats/${j}/${i}/sig0${l}-${k}.tsv
+										rm ${bundledir}temp.mif
+									done
+									paste -d ' ' ${bundledir}tracts.tsv ${bundledir}volumes.tsv ${templatedir}stats/${j}/${i}/sig0${l}-${k}.tsv > ${templatedir}stats/${j}/${i}/sig0${l}-${k}-vols.tsv
+									rm ${templatedir}stats/${j}/${i}/sig0${l}-${k}.tsv
 								done
 								fixel2tsf ${templatedir}stats/${j}/${i}/fwe_1mpvalue_${k}-fixel.mif ${templatedir}tracks/${j}_${i}_sig080-${k}.tck ${templatedir}stats/${j}/${i}/tracks_fwe_1mpvalue_${k}.tsf
 							done
 						elif [[ $j == ncc || $j = hcc ]]
 						then
-							#mrclusterstats ${groupdir}files_${i}.${j}.txt ${groupdir}design.${j}.txt ${groupdir}contrast.${j}.txt ${templatedir}fixel_mask/mask.mif ${templatedir}stats/${j}/${i}/
-							mrclusterstats ${groupdir}files_${i}.${j}.txt ${groupdir}design.${j}.txt ${groupdir}contrast.${j}.txt ${templatedir}fixel_mask/mask.mif ${templatedir}stats/${j}/${i}/ -nthreads 4
+							mrclusterstats ${groupdir}files_${i}.${j}.txt ${groupdir}design.${j}.txt ${groupdir}contrast.${j}.txt ${templatedir}fixel_mask/mask.mif ${templatedir}stats/${j}/${i}/
 							for k in t1 t2
 							do
 								voxel2fixel ${templatedir}stats/${j}/${i}/fwe_1mpvalue_${k}.mif ${templatedir}fd/ ${templatedir}stats/${j}/${i} fwe_1mpvalue_${k}-fixel.mif
@@ -422,6 +470,17 @@ do
 								do
 									mrthreshold -abs 0.${l} ${templatedir}stats/${j}/${i}/fwe_1mpvalue_${k}.mif ${templatedir}stats/${j}/${i}/sig0${l}-${k}.mif
 									tckgen -angle 22.5 -maxlen 25 -minlen 2 -power 1.0 ${templatedir}wmfod-template.mif -seed_image ${templatedir}stats/${j}/${i}/sig0${l}-${k}.mif -mask ${templatedir}template_mask.mif -select 100000 -cutoff 0.06 ${templatedir}tracks/${j}_${i}_sig0${l}-${k}.tck
+									touch ${templatedir}stats/${j}/${i}/sig0${l}-${k}.tsv
+									for m in ${tractseg_wmdir}tractseg_output/TOM_trackings/*.tck
+									do
+										tractfile=${m##*TOM_trackings/}
+										tract=${tractfile%%.tck}
+										mrconvert ${bundledir}${tract}_voxel.mif -coord 3 0 -axes 0,1,2 ${bundledir}temp.mif
+										mrstats -output count -mask ${templatedir}stats/${j}/${i}/sig0${l}-${k}.mif -ignorezero ${bundledir}temp.mif >> ${templatedir}stats/${j}/${i}/sig0${l}-${k}.tsv
+										rm ${bundledir}temp.mif
+									done
+									paste -d ' ' ${bundledir}tracts.tsv ${bundledir}volumes.tsv ${templatedir}stats/${j}/${i}/sig0${l}-${k}.tsv > ${templatedir}stats/${j}/${i}/sig0${l}-${k}-vols.tsv
+									rm ${templatedir}stats/${j}/${i}/sig0${l}-${k}.tsv
 								done
 								fixel2tsf ${templatedir}stats/${j}/${i}/fwe_1mpvalue_${k}-fixel.mif ${templatedir}tracks/${j}_${i}_sig080-${k}.tck ${templatedir}stats/${j}/${i}/tracks_fwe_1mpvalue_${k}.tsf
 							done
@@ -431,18 +490,169 @@ do
 					done
 				done
 				
-		elif [[ $statselect == 4 ]]
-				# Stats skipped
-				then
-					echo Stasistics skipped
-					break
+			elif [[ $statselect == 4 ]]
+			# table extraction
+			then
+				rm ${templatedir}stats/*.tsv
+				for i in all
+				do
+					for j in t3 t6
+					do
+						echo ${i}'\n'tvalue'\n'${j} > ${templatedir}stats/${i}_${j}_t.txt
+						echo ${i}'\n'1mpvalue'\n'${j} > ${templatedir}stats/${i}_${j}_p.txt
+						echo '\n''\n'metrics > ${templatedir}stats/metrics.txt
+						for k in fd fdc logfc
+						do
+							echo ${k} >> ${templatedir}stats/metrics.txt
+							mrstats -output max ${templatedir}stats/${i}/${k}/tvalue_${j}.mif >> ${templatedir}stats/${i}_${j}_t.txt
+							mrstats -output max ${templatedir}stats/${i}/${k}/fwe_1mpvalue_${j}.mif >> ${templatedir}stats/${i}_${j}_p.txt
+						done
+						cat ${templatedir}stats/${i}_${j}_t.txt | tr -d "[:blank:]" > ${templatedir}stats/${i}_${j}_t2.txt
+						cat ${templatedir}stats/${i}_${j}_p.txt | tr -d "[:blank:]" > ${templatedir}stats/${i}_${j}_p2.txt
+						paste -d ' ' ${templatedir}stats/${i}_${j}_t2.txt ${templatedir}stats/${i}_${j}_p2.txt > ${templatedir}stats/${i}_${j}_vals.txt
+					done
+					for j in t1 t2
+					do
+						echo ${i}'\n'tvalue'\n'${j} > ${templatedir}stats/${i}_${j}_t.txt
+						echo ${i}'\n'1mpvalue'\n'${j} > ${templatedir}stats/${i}_${j}_p.txt
+						echo '\n''\n'metrics > ${templatedir}stats/metrics.txt
+						for k in ad ak fa md mk rd rk
+						do
+							echo ${k} >> ${templatedir}stats/metrics.txt
+							mrstats -output max ${templatedir}stats/${i}/${k}/tvalue_${j}.mif >> ${templatedir}stats/${i}_${j}_t.txt
+							mrstats -output max ${templatedir}stats/${i}/${k}/fwe_1mpvalue_${j}.mif >> ${templatedir}stats/${i}_${j}_p.txt
+						done
+						cat ${templatedir}stats/${i}_${j}_t.txt | tr -d "[:blank:]" > ${templatedir}stats/${i}_${j}_t2.txt
+						cat ${templatedir}stats/${i}_${j}_p.txt | tr -d "[:blank:]" > ${templatedir}stats/${i}_${j}_p2.txt
+						paste -d ' ' ${templatedir}stats/${i}_${j}_t2.txt ${templatedir}stats/${i}_${j}_p2.txt > ${templatedir}stats/${i}_${j}_vals.txt
+					done
+					paste -d ' ' ${templatedir}stats/metrics.txt ${templatedir}stats/${i}_*_vals.txt > ${templatedir}stats/${i}.tsv
+					rm ${templatedir}stats/*.txt
+				done
+				for i in ncc #all hcc
+				do
+					for j in t1 t2
+					do 
+						echo ${i}'\n'tvalue'\n'${j} > ${templatedir}stats/${i}_${j}_t.txt
+						echo ${i}'\n'1mpvalue'\n'${j} > ${templatedir}stats/${i}_${j}_p.txt
+						echo '\n''\n'metrics > ${templatedir}stats/metrics.txt
+						for k in ad ak fa fd fdc logfc md mk rd rk
+						do
+							echo ${k} >> ${templatedir}stats/metrics.txt
+							mrstats -output max ${templatedir}stats/${i}/${k}/tvalue_${j}.mif >> ${templatedir}stats/${i}_${j}_t.txt
+							mrstats -output max ${templatedir}stats/${i}/${k}/fwe_1mpvalue_${j}.mif >> ${templatedir}stats/${i}_${j}_p.txt
+						done
+						cat ${templatedir}stats/${i}_${j}_t.txt | tr -d "[:blank:]" > ${templatedir}stats/${i}_${j}_t2.txt
+						cat ${templatedir}stats/${i}_${j}_p.txt | tr -d "[:blank:]" > ${templatedir}stats/${i}_${j}_p2.txt
+						paste -d ' ' ${templatedir}stats/${i}_${j}_t2.txt ${templatedir}stats/${i}_${j}_p2.txt > ${templatedir}stats/${i}_${j}_vals.txt
+					done
+					paste -d ' ' ${templatedir}stats/${i}_*_vals.txt > ${templatedir}stats/${i}.tsv
+					rm ${templatedir}stats/*.txt
+				done
+				paste -d ' ' ${templatedir}stats/*.tsv > ${templatedir}stats/sigs.tsv
+				rm ${templatedir}stats/all.tsv ${templatedir}stats/ncc.tsv ${templatedir}stats/hcc.tsv
+				
+				echo '\n''\n'tracts > ${templatedir}stats/tracts_1.txt
+				echo '\n''\n' > ${templatedir}stats/tracts_2.txt
+				cut -d ' ' -f 1 ${templatedir}stats/all/ad/sig080-t1-vols.tsv >> ${templatedir}stats/tracts_1.txt
+				cut -d ' ' -f 2 ${templatedir}stats/all/ad/sig080-t1-vols.tsv >> ${templatedir}stats/tracts_2.txt
+				for i in all
+				do
+					for j in t3 t6
+					do
+						for k in fd fdc logfc
+						do
+							echo ${i}'\n'${k}'\n'${j} > ${templatedir}stats/${i}_${j}_${k}.txt
+							cut -d ' ' -f 4 ${templatedir}stats/${i}/${k}/sig080-${j}-vols.tsv >> ${templatedir}stats/${i}_${j}_${k}.txt
+						done
+					done
+					for j in t1 t2
+					do
+						for k in ad ak fa md mk rd rk
+						do
+							echo ${i}'\n'${k}'\n'${j} > ${templatedir}stats/${i}_${j}_${k}.txt
+							cut -d ' ' -f 4 ${templatedir}stats/${i}/${k}/sig080-${j}-vols.tsv >> ${templatedir}stats/${i}_${j}_${k}.txt
+						done
+					done
+					paste -d ' ' ${templatedir}stats/${i}*.txt > ${templatedir}stats/${i}_vols.txt
+				done
+				for i in ncc #all hcc
+				do
+					for j in t1 t2
+					do 
+						for k in ad ak fa fd fdc logfc md mk rd rk
+						do
+							echo ${i}'\n'${k}'\n'${j} > ${templatedir}stats/${i}_${j}_${k}.txt
+							cut -d ' ' -f 4 ${templatedir}stats/${i}/${k}/sig080-${j}-vols.tsv >> ${templatedir}stats/${i}_${j}_${k}.txt
+						done
+					done
+					paste -d ' ' ${templatedir}stats/${i}*.txt > ${templatedir}stats/${i}_vols.txt
+				done
+				paste -d ' ' ${templatedir}stats/tracts_1.txt ${templatedir}stats/tracts_2.txt ${templatedir}stats/*_vols.txt > ${templatedir}stats/vols.tsv
+				rm ${templatedir}stats/*.txt
+				
+			elif [[ $statselect == 5 ]]
+			# Stats skipped
+			then
+				echo Stasistics skipped
+				break
 
-				else
-					echo Invalid selection.
-				fi
-			done
+			else
+				echo Invalid selection.
+			fi
+		done
 
 	elif [[ $diffselect == 5 ]]
+	# Lesion Network Mapping
+	then
+		export FREESURFER_HOME=~/freesurfer
+		source $FREESURFER_HOME/SetUpFreeSurfer.sh
+		mkdir -p ${lesiondir}group 
+		cp ${templatedir}fd/directions.mif ${templatedir}fd/index.mif ${lesiondir}group/
+		for subpath in ${indir}
+		do
+			subname=${subpath##*/input/}
+			sub=${subpath}/${subname}
+			if [[ -e ${derivdir}lesion-masks/${subname}/${subname}_space-T1w_mask-cyst.nii.gz ]]
+			then
+				# Shell setup
+				mkdir -p ${lesiondir}${subname}
+				# dwi prep
+				mrconvert ${sub}_dwi_upsampled.mif -coord 3 0 -axes 0,1,2 ${sub}_dwi_upsampled.nii.gz
+				mri_synthstrip -i ${sub}_dwi_upsampled.nii.gz -o ${sub}_space-dwi_brain.nii.gz
+				# t1w prep
+				mri_synthstrip -i ${rawdir}${subname}/anat/${subname}_T1w.nii.gz -o ${sub}_space-T1w_brain.nii.gz
+				flirt -in ${sub}_space-T1w_brain.nii.gz -ref ${sub}_space-dwi_brain.nii.gz -dof 6 -out ${sub}_space-dwi_T1w.nii.gz -omat ${sub}_space-dwi_T1w.mat
+				mrconvert ${sub}_space-dwi_T1w.nii.gz ${sub}_space-dwi_T1w.mif
+				mrtransform ${sub}_space-dwi_T1w.mif -warp ${sub}_sub2template-warp.mif -interp nearest ${sub}_t1w_template-space.mif
+				# cyst mask prep
+				flirt -in ${derivdir}lesion-masks/${subname}/${subname}_space-T1w_mask-cyst.nii.gz -ref ${sub}_space-dwi_brain.nii.gz -init ${sub}_space-dwi_T1w.mat -applyxfm -out ${sub}_space-dwi_cyst.nii.gz
+				mrconvert ${sub}_space-dwi_cyst.nii.gz ${sub}_space-dwi_cyst.mif -force
+				mrtransform ${sub}_space-dwi_cyst.mif -warp ${sub}_sub2template-warp.mif -interp nearest -datatype bit ${sub}_cyst_template-space.mif
+				maskfilter ${sub}_cyst_template-space.mif dilate -npass 2 ${sub}_cyst-dilate_template-space.mif
+				# oedema mask prep
+				flirt -in ${derivdir}lesion-masks/${subname}/${subname}_space-T1w_mask-oedema.nii.gz -ref ${sub}_space-dwi_brain.nii.gz -init ${sub}_space-dwi_T1w.mat -applyxfm -out ${sub}_space-dwi_oedema.nii.gz
+				mrconvert ${sub}_space-dwi_oedema.nii.gz ${sub}_space-dwi_oedema.mif
+				mrtransform ${sub}_space-dwi_oedema.mif -warp ${sub}_sub2template-warp.mif -interp nearest -datatype bit ${sub}_oedema_template-space.mif
+				maskfilter ${sub}_oedema_template-space.mif dilate -npass 2 ${sub}_oedema-dilate_template-space.mif
+				# oedema/cyst lesion mask creation
+				mrcalc ${sub}_cyst_template-space.mif ${sub}_oedema_template-space.mif -max ${sub}_lesion_template-space.mif
+				# tract mapping - short
+				tckgen -angle 22.5 -maxlen 25 -minlen 2 -power 1.0 ${templatedir}wmfod-template.mif -seed_image ${sub}_cyst-dilate_template-space.mif -mask ${templatedir}template_mask.mif -select 100000 -cutoff 0.06 ${lesiondir}${subname}/${subname}_lesion-network.tck
+				tck2fixel ${lesiondir}${subname}/${subname}_lesion-network.tck ${lesiondir}group/ ${lesiondir}group/ ${subname}_lesion-network_fixel.mif
+				mrthreshold ${lesiondir}group/${subname}_lesion-network_fixel.mif -abs 0.1 ${lesiondir}group/${subname}_lesion-network_fixel.mif -force
+				fixel2voxel ${lesiondir}group/${subname}_lesion-network_fixel.mif absmax ${lesiondir}group/${subname}_lesion-network_voxel.mif
+				# tract mapping - long
+				tckgen -angle 22.5 -maxlen 250 -minlen 25 -power 1.0 ${templatedir}wmfod-template.mif -seed_image ${sub}_cyst-dilate_template-space.mif -mask ${templatedir}template_mask.mif -select 100000 -cutoff 0.06 ${lesiondir}${subname}/${subname}_lesion-network_long.tck
+				tck2fixel ${lesiondir}${subname}/${subname}_lesion-network_long.tck ${lesiondir}group/ ${lesiondir}group/ ${subname}_lesion-network_long_fixel.mif
+				fixel2voxel ${lesiondir}group/${subname}_lesion-network_long_fixel.mif sum ${lesiondir}group/${subname}_lesion-network_long_voxel.mif
+				rm ${sub}*.nii.gz ${sub}*.mat ${sub}_space-dwi*.mif 
+			else
+				echo No cyst mask found.
+			fi
+		done
+	
+	elif [[ $diffselect == 6 ]]
 	# Images
 	then
 		# a glass brain and an empty image are created, for visualisation
@@ -491,7 +701,72 @@ do
 			done
 		done
 	
-	elif [[ $diffselect == 6 ]]
+	elif [[ $diffselect == 7 ]]
+	# Connectome generations
+	then
+		while true
+		do
+			echo Choose FBA action:
+			echo
+			echo 1. Label conversion and registration
+			echo 2. Connectome generation
+			echo 3. Skip connectomes
+			echo
+			read "connselect?Selection (1/3): "
+
+			if [[ $connselect == 1 ]]
+			# Label processing
+			then
+				export FREESURFER_HOME=~/freesurfer
+				source $FREESURFER_HOME/SetUpFreeSurfer.sh
+				fsdir=/Volumes/LaCie/Working_Directory_Imaging/240104_Proj-NCC-I/derivatives/freesurfer-7.4.1/
+				for subpath in ${indir}sub*
+				do
+					subname=${subpath##*/input/}
+					sub=${subpath}/${subname}
+					mrconvert ${sub}_dwi_upsampled.mif -coord 3 0 -axes 0,1,2 ${sub}_dwi_upsampled.nii.gz
+					mri_synthstrip -i ${sub}_dwi_upsampled.nii.gz -o ${sub}_space-dwi_brain.nii.gz
+					# t1w prep
+					mri_synthstrip -i ${rawdir}${subname}/anat/${subname}_T1w.nii.gz -o ${sub}_space-T1w_brain.nii.gz
+					flirt -in ${sub}_space-T1w_brain.nii.gz -ref ${sub}_space-dwi_brain.nii.gz -dof 6 -out ${sub}_space-dwi_T1w.nii.gz -omat ${sub}_space-dwi_T1w.mat
+					# label prep
+					labelconvert ${fsdir}${subname}/mri/aparc.a2009s+aseg.mgz ~/freesurfer/FreeSurferColorLUT.txt ${groupdir}fs_a2009s.txt ${sub}_destrieux.mif
+					mrgrid ${sub}_destrieux.mif regrid -template ${sub}_space-T1w_brain.nii.gz ${sub}_destrieux_regrid.mif -interp nearest
+					mrconvert ${sub}_destrieux_regrid.mif ${sub}_destrieux.nii.gz
+					fslreorient2std ${sub}_destrieux.nii.gz ${sub}_destrieux-reorient.nii.gz 
+					flirt -in ${sub}_destrieux-reorient.nii.gz -ref ${sub}_space-dwi_brain.nii.gz -init ${sub}_space-dwi_T1w.mat -applyxfm -interp nearestneighbour -out ${sub}_space-dwi_destrieux.nii.gz
+					mrconvert ${sub}_space-dwi_destrieux.nii.gz ${sub}_space-dwi_destrieux.mif
+					rm ${sub}*.nii.gz ${sub}*.mat ${sub}_destrieux_regrid.mif ${sub}_destrieux.mif
+				done
+				
+			elif [[ $connselect == 2 ]]
+			# Connectome generation
+			then
+				for subpath in ${indir}sub*
+				do
+					subname=${subpath##*/input/}
+					sub=${subpath}/${subname}
+					dwi2fod msmt_csd ${sub}_dwi_upsampled.mif ${groupdir}nimhans_average_response-wm.txt ${sub}_wmfod.mif ${groupdir}nimhans_average_response-gm.txt ${sub}_gmfod.mif ${groupdir}nimhans_average_response-csf.txt ${sub}_csf.mif -mask ${sub}_dwi_upsampled-mask.mif
+					mtnormalise ${sub}_wmfod.mif ${sub}_wmfod-norm.mif ${sub}_gmfod.mif ${sub}_gmfod-norm.mif ${sub}_csf.mif ${sub}_csf-norm.mif -mask ${sub}_dwi_upsampled-mask.mif
+					tckgen -angle 22.5 -maxlen 250 -minlen 10 -power 1.0 ${sub}_wmfod-norm.mif -seed_image ${sub}_dwi_upsampled-mask.mif -mask ${sub}_dwi_upsampled-mask.mif -select 5000000 -cutoff 0.06 ${sub}_wholebrain.tck
+					tcksift ${sub}_wholebrain.tck ${sub}_wmfod-norm.mif ${sub}_wholebrain_sift.tck -term_number 1000000
+					tcksift2 ${sub}_wholebrain_sift.tck ${sub}_wmfod-norm.mif ${sub}_wholebrain_sift.txt
+					rm ${sub}_wholebrain.tck
+					tck2connectome ${sub}_wholebrain_sift.tck ${sub}_space-dwi_destrieux.mif ${sub}_connectome.csv -tck_weights_in ${sub}_wholebrain_sift.txt -zero_diagonal -symmetric 
+				done
+				
+			elif [[ $connselect == 3 ]]
+			# Connectome generation is skipped
+			then
+				echo Connectome generation skipped.
+				break
+				
+			else
+				echo Invalid selection.
+			fi
+		done
+
+	elif [[ $diffselect == 8 ]]
 	# Diffusion analysis is skipped
 	then
 		echo Diffusion analysis skipped.
