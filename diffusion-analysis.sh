@@ -64,13 +64,14 @@ do
 		cd ~/
 		mkdir tractseg
 		brew install pyenv
-		pyenv install 3.6.15
-		pyenv local 3.6.15
-		pyenv exec python3.6 -m venv tractseg
+		pyenv install 3.12.1
+		pyenv local 3.12.1
+		pyenv exec python3.12 -m venv tractseg
 		source tractseg/bin/activate
-		pip install torch
-		pip install packaging
-		pip install TractS
+		pip install --upgrade pip
+		pip3 install torch
+		pip3 install packaging
+		pip3 install TractSeg
 
 	elif [[ $diffselect == 2 ]]
 	# Fixel-based analysis
