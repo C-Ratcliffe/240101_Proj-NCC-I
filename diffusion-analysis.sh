@@ -64,12 +64,12 @@ do
 		cd ~/
 		mkdir tractseg
 		brew install pyenv
-		pyenv install 3.12.1
-		pyenv local 3.12.1
-		pyenv exec python3.12 -m venv tractseg
+		pyenv install 3.11.1
+		pyenv local 3.11.1
+		pyenv exec python3.11 -m venv tractseg
 		source tractseg/bin/activate
 		pip install --upgrade pip
-		pip3 install torch
+		pip3 install torch torchvision torchaudio
 		pip3 install packaging
 		pip3 install TractSeg
 
